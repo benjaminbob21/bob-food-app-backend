@@ -7,6 +7,55 @@ const STRIPE = new Stripe(process.env.STRIPE_API_KEY as string);
 const FRONTEND_URL = process.env.FRONTEND_URL as string;
 const STRIPE_ENDPOINT_SECRET = process.env.STRIPE_WEBHOOK_SECRET as string;
 
+const initiateGroupOrder = async (req: Request, res: Response) => {
+  const { totalAmount, numberOfPeople, items, restaurantId, deliveryDetails } =
+    req.body;
+
+  const restaurant = await Restaurant.findById(restaurantId);
+  if (!restaurant) {
+    return res.status(404).json({ message: "Restaurant not found" });
+  }
+
+  const amountPerPerson = Math.ceil(totalAmount / numberOfPeople);
+  const newOrder = new Order({
+    restaurant: restaurant._id,
+    user: req.userId,
+    deliveryDetails,
+    cartItems: items,
+    totalAmount,
+    numberOfPeople,
+    amountPerPerson,
+    isGroupOrder: true,
+    status: "pending",
+    createdAt: new Date(),
+  });
+
+  await newOrder.save();
+  res.json({ orderId: newOrder._id, amountPerPerson });
+};
+
+const joinGroupOrder = async (req: Request, res: Response) => {
+  const { orderId } = req.params;
+  const order = await Order.findById(orderId);
+
+  if (!order || order.status !== "pending") {
+    return res
+      .status(404)
+      .json({ error: "Order not found or no longer accepting payments" });
+  }
+
+  const paymentIntent = await STRIPE.paymentIntents.create({
+    amount: order.amountPerPerson,
+    currency: "usd",
+    metadata: { orderId },
+  });
+
+  order.paymentIntents.push(paymentIntent.id);
+  await order.save();
+
+  res.json({ clientSecret: paymentIntent.client_secret });
+};
+
 const getMyOrders = async (req: Request, res: Response) => {
   try {
     const orders = await Order.find({ user: req.userId })
@@ -33,6 +82,8 @@ type CheckoutSessionRequest = {
     city: string;
   };
   restaurantId: string;
+  numberOfPeople: number;
+  isGroupOrder: boolean;
 };
 
 const stripeWebhookHandler = async (req: Request, res: Response) => {
@@ -81,9 +132,12 @@ const createCheckoutSession = async (req: Request, res: Response) => {
     const newOrder = new Order({
       restaurant: restaurant,
       user: req.userId,
-      status: "placed",
+      status: checkoutSessionRequest.isGroupOrder ? "pending" : "placed",
       deliveryDetails: checkoutSessionRequest.deliveryDetails,
       cartItems: checkoutSessionRequest.cartItems,
+      numberOfPeople: checkoutSessionRequest.isGroupOrder
+        ? checkoutSessionRequest.numberOfPeople
+        : 1,
       createdAt: new Date(),
     });
 
