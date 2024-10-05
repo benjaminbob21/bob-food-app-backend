@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import Restaurant, { MenuItemType } from "../models/restaurant";
 import Order from "../models/order";
 import GroupOrder from "../models/groupOrder";
+import User from "../models/user";
 
 const STRIPE = new Stripe(process.env.STRIPE_API_KEY as string);
 const FRONTEND_URL = process.env.FRONTEND_URL as string;
@@ -38,7 +39,6 @@ type CheckoutSessionRequest = {
   };
   restaurantId: string;
   groupOrderId?: string;
-  amountPerPerson?: number;
 };
 
 const handleIndividualOrderPayment = async (orderId: string, session: any) => {
@@ -58,6 +58,21 @@ const handleGroupOrderPayment = async (groupOrderId: string, userId: string, ses
   if (!groupOrder) {
     console.error(`Group order not found: ${groupOrderId}`);
     return;
+  }
+
+  const user = await User.findById(userId);
+  if (user) {
+    if (!groupOrder.deliveryDetails) {
+      groupOrder.deliveryDetails = {
+        name: "",
+      };
+    }
+
+    if (groupOrder.deliveryDetails.name) {
+      groupOrder.deliveryDetails.name += `, ${user.name}`;
+    } else {
+      groupOrder.deliveryDetails.name = user.name;
+    }
   }
 
   groupOrder.paidParticipants.push({
@@ -85,7 +100,6 @@ const handleGroupOrderPayment = async (groupOrderId: string, userId: string, ses
 };
 
 const stripeWebhookHandler = async (req: Request, res: Response) => {
-  console.log("Yeah")
   let event;
 
   try {
@@ -101,13 +115,10 @@ const stripeWebhookHandler = async (req: Request, res: Response) => {
   }
 
   if (event.type === "checkout.session.completed") {
-    console.log("checkout done first")
     const session = event.data.object;
     if (session.metadata) {
       const { groupOrderId, orderId, userId } = session.metadata;
-      console.log("metadata intact")
       if (groupOrderId !== null) {
-        console.log("groupId intact");
         await handleGroupOrderPayment(groupOrderId, userId, session);
       } else if (orderId) {
         await handleIndividualOrderPayment(orderId, session);
@@ -157,6 +168,10 @@ const handleGroupCheckout = async (
   );
   if (!groupOrder) {
     return res.status(404).json({ message: "Group order not found" });
+  }
+
+  if (!groupOrder.deliveryDetails) {
+    groupOrder.deliveryDetails = checkoutSessionRequest.deliveryDetails
   }
 
   if (

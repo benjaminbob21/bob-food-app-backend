@@ -11,7 +11,6 @@ const groupOrderSchema = new mongoose.Schema({
     ref: "User",
     required: true,
   },
-  participants: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
   paidParticipants: [
     {
       user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
