@@ -15,4 +15,20 @@ router.post(
 
 router.post("/checkout/webhook", OrderController.stripeWebhookHandler);
 
+router.post("/group", jwtCheck, jwtParse, OrderController.createGroupOrder);
+
+router.get(
+  "/get-group",
+  jwtCheck,
+  jwtParse,
+  OrderController.getGroupOrder
+);
+
+router.post(
+  "/join-group/:groupOrderId",
+  jwtCheck,
+  jwtParse,
+  OrderController.joinGroupOrder
+);
+
 export default router;

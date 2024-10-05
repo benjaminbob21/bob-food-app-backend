@@ -2,59 +2,11 @@ import Stripe from "stripe";
 import { Request, Response } from "express";
 import Restaurant, { MenuItemType } from "../models/restaurant";
 import Order from "../models/order";
+import GroupOrder from "../models/groupOrder";
 
 const STRIPE = new Stripe(process.env.STRIPE_API_KEY as string);
 const FRONTEND_URL = process.env.FRONTEND_URL as string;
 const STRIPE_ENDPOINT_SECRET = process.env.STRIPE_WEBHOOK_SECRET as string;
-
-const initiateGroupOrder = async (req: Request, res: Response) => {
-  const { totalAmount, numberOfPeople, items, restaurantId, deliveryDetails } =
-    req.body;
-
-  const restaurant = await Restaurant.findById(restaurantId);
-  if (!restaurant) {
-    return res.status(404).json({ message: "Restaurant not found" });
-  }
-
-  const amountPerPerson = Math.ceil(totalAmount / numberOfPeople);
-  const newOrder = new Order({
-    restaurant: restaurant._id,
-    user: req.userId,
-    deliveryDetails,
-    cartItems: items,
-    totalAmount,
-    numberOfPeople,
-    amountPerPerson,
-    isGroupOrder: true,
-    status: "pending",
-    createdAt: new Date(),
-  });
-
-  await newOrder.save();
-  res.json({ orderId: newOrder._id, amountPerPerson });
-};
-
-const joinGroupOrder = async (req: Request, res: Response) => {
-  const { orderId } = req.params;
-  const order = await Order.findById(orderId);
-
-  if (!order || order.status !== "pending") {
-    return res
-      .status(404)
-      .json({ error: "Order not found or no longer accepting payments" });
-  }
-
-  const paymentIntent = await STRIPE.paymentIntents.create({
-    amount: order.amountPerPerson,
-    currency: "usd",
-    metadata: { orderId },
-  });
-
-  order.paymentIntents.push(paymentIntent.id);
-  await order.save();
-
-  res.json({ clientSecret: paymentIntent.client_secret });
-};
 
 const getMyOrders = async (req: Request, res: Response) => {
   try {
@@ -69,12 +21,15 @@ const getMyOrders = async (req: Request, res: Response) => {
   }
 };
 
+
+type cartItem = {
+  menuItemId: string;
+  name: string;
+  quantity: string;
+};
+
 type CheckoutSessionRequest = {
-  cartItems: {
-    menuItemId: string;
-    name: string;
-    quantity: string;
-  }[];
+  cartItems: cartItem [];
   deliveryDetails: {
     email: string;
     name: string;
@@ -82,11 +37,55 @@ type CheckoutSessionRequest = {
     city: string;
   };
   restaurantId: string;
-  numberOfPeople: number;
-  isGroupOrder: boolean;
+  groupOrderId?: string;
+  amountPerPerson?: number;
+};
+
+const handleIndividualOrderPayment = async (orderId: string, session: any) => {
+  const order = await Order.findById(orderId);
+  if (!order) {
+    console.error(`Order not found.`);
+    return;
+  }
+
+  order.totalAmount = session.amount_total;
+  order.status = "paid";
+  await order.save();
+};
+
+const handleGroupOrderPayment = async (groupOrderId: string, userId: string, session: any) => {
+  const groupOrder = await GroupOrder.findById(groupOrderId);
+  if (!groupOrder) {
+    console.error(`Group order not found: ${groupOrderId}`);
+    return;
+  }
+
+  groupOrder.paidParticipants.push({
+    email: session.customer_details.email,
+    amount: session.amount_total,
+    user: userId
+  });
+
+  if (groupOrder.paidParticipants.length === groupOrder.totalParticipants) {
+    groupOrder.status = "paid";
+    // Create the actual order here
+    const newOrder = new Order({
+      restaurant: groupOrder.restaurant,
+      user: groupOrder.initiator,
+      status: "paid",
+      deliveryDetails: groupOrder.deliveryDetails,
+      cartItems: groupOrder.cartItems,
+      createdAt: new Date(),
+      totalAmount: groupOrder.totalAmount,
+    });
+    await newOrder.save();
+  }
+
+  await groupOrder.save();
 };
 
 const stripeWebhookHandler = async (req: Request, res: Response) => {
+  console.log("Yeah")
   let event;
 
   try {
@@ -102,20 +101,22 @@ const stripeWebhookHandler = async (req: Request, res: Response) => {
   }
 
   if (event.type === "checkout.session.completed") {
-    const order = await Order.findById(event.data.object.metadata?.orderId);
-
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
+    console.log("checkout done first")
+    const session = event.data.object;
+    if (session.metadata) {
+      const { groupOrderId, orderId, userId } = session.metadata;
+      console.log("metadata intact")
+      if (groupOrderId !== null) {
+        console.log("groupId intact");
+        await handleGroupOrderPayment(groupOrderId, userId, session);
+      } else if (orderId) {
+        await handleIndividualOrderPayment(orderId, session);
+      }
     }
 
-    order.totalAmount = event.data.object.amount_total;
-    order.status = "paid";
-
-    await order.save();
-  }
-
-  res.status(200).send();
-};
+    res.status(200).send();
+  };
+}
 
 const createCheckoutSession = async (req: Request, res: Response) => {
   try {
@@ -129,40 +130,121 @@ const createCheckoutSession = async (req: Request, res: Response) => {
       throw new Error("Restaurant not found");
     }
 
-    const newOrder = new Order({
-      restaurant: restaurant,
-      user: req.userId,
-      status: checkoutSessionRequest.isGroupOrder ? "pending" : "placed",
-      deliveryDetails: checkoutSessionRequest.deliveryDetails,
-      cartItems: checkoutSessionRequest.cartItems,
-      numberOfPeople: checkoutSessionRequest.isGroupOrder
-        ? checkoutSessionRequest.numberOfPeople
-        : 1,
-      createdAt: new Date(),
-    });
-
-    const lineItems = createLineItems(
-      checkoutSessionRequest,
-      restaurant.menuItems
-    );
-
-    const session = await createSession(
-      lineItems,
-      newOrder._id.toString(),
-      restaurant.deliveryPrice,
-      restaurant._id.toString()
-    );
-
-    if (!session.url) {
-      return res.status(500).json({ message: "Error creating stripe session" });
+    if (checkoutSessionRequest.groupOrderId) {
+      await handleGroupCheckout(checkoutSessionRequest, req, res, restaurant);
+    } else {
+      await handleIndividualCheckout(
+        checkoutSessionRequest,
+        req,
+        res,
+        restaurant
+      );
     }
-
-    await newOrder.save();
-    res.json({ url: session.url });
   } catch (error: any) {
     console.log(error);
     res.status(500).json({ message: error.raw.message });
   }
+};
+
+const handleGroupCheckout = async (
+  checkoutSessionRequest: CheckoutSessionRequest,
+  req: Request,
+  res: Response,
+  restaurant: any
+) => {
+  const groupOrder = await GroupOrder.findById(
+    checkoutSessionRequest.groupOrderId
+  );
+  if (!groupOrder) {
+    return res.status(404).json({ message: "Group order not found" });
+  }
+
+  if (
+    groupOrder.paidParticipants.some(
+      (p) => p.email === checkoutSessionRequest.deliveryDetails.email
+    )
+  ) {
+    return res
+      .status(400)
+      .json({ message: "You have already paid your share" });
+  }
+
+  const session = await createSession(
+    [
+      {
+        price_data: {
+          currency: "usd",
+          unit_amount: groupOrder.amountPerPerson, // Now properly converted to cents
+          product_data: {
+            name: "Your share of the group order",
+          },
+        },
+        quantity: 1,
+      },
+    ],
+    groupOrder._id.toString(),
+    0,
+    restaurant._id.toString(),
+    req.userId,
+    true,
+    checkoutSessionRequest.groupOrderId
+  );
+
+  if (!session.url) {
+    return res.status(500).json({ message: "Error creating stripe session" });
+  }
+
+  res.json({ url: session.url });
+};
+
+const handleIndividualCheckout = async (
+  checkoutSessionRequest: CheckoutSessionRequest,
+  req: Request,
+  res: Response,
+  restaurant: any
+) => {
+
+  let totalAmount = 0;
+  checkoutSessionRequest.cartItems.forEach((item: cartItem) => {
+    const menuItem = restaurant.menuItems.find(
+      (menuItem:MenuItemType) => menuItem._id.toString() === item.menuItemId
+    );
+    if (menuItem) {
+      totalAmount += menuItem.price * parseInt(item.quantity);
+    }
+  });
+
+  totalAmount += restaurant.deliveryPrice;
+
+  const newOrder = new Order({
+    restaurant: restaurant,
+    user: req.userId,
+    status: "placed",
+    deliveryDetails: checkoutSessionRequest.deliveryDetails,
+    totalAmount: totalAmount,
+    cartItems: checkoutSessionRequest.cartItems,
+    createdAt: new Date(),
+  });
+
+  const lineItems = createLineItems(
+    checkoutSessionRequest,
+    restaurant.menuItems
+  );
+
+  const session = await createSession(
+    lineItems,
+    newOrder._id.toString(),
+    restaurant.deliveryPrice,
+    restaurant._id.toString(),
+    req.userId
+  );
+
+  if (!session.url) {
+    return res.status(500).json({ message: "Error creating stripe session" });
+  }
+
+  await newOrder.save();
+  res.json({ url: session.url });
 };
 
 const createLineItems = (
@@ -199,26 +281,34 @@ const createSession = async (
   lineItems: Stripe.Checkout.SessionCreateParams.LineItem[],
   orderId: string,
   deliveryPrice: number,
-  restaurantId: string
+  restaurantId: string,
+  userId: string,
+  isGroupOrder: boolean = false,
+  groupId: string | null = null
 ) => {
   const sessionData = await STRIPE.checkout.sessions.create({
     line_items: lineItems,
-    shipping_options: [
-      {
-        shipping_rate_data: {
-          display_name: "Delivery",
-          type: "fixed_amount",
-          fixed_amount: {
-            amount: deliveryPrice,
-            currency: "usd",
+    shipping_options: isGroupOrder
+      ? []
+      : [
+          {
+            shipping_rate_data: {
+              display_name: "Delivery",
+              type: "fixed_amount",
+              fixed_amount: {
+                amount: deliveryPrice,
+                currency: "usd",
+              },
+            },
           },
-        },
-      },
-    ],
+        ],
     mode: "payment",
     metadata: {
       orderId,
       restaurantId,
+      userId,
+      isGroupOrder: isGroupOrder.toString(),
+      groupOrderId: groupId
     },
     success_url: `${FRONTEND_URL}/order-status?success=true`,
     cancel_url: `${FRONTEND_URL}/detail/${restaurantId}?cancelled=true`,
@@ -227,8 +317,134 @@ const createSession = async (
   return sessionData;
 };
 
+const createGroupOrder = async (req: Request, res: Response) => {
+  try {
+    const { cartItems, deliveryDetails, restaurantId } =
+      req.body;
+
+    const restaurant = await Restaurant.findById(restaurantId);
+
+    if (!restaurant) {
+      return res.status(404).json({ message: "Restaurant not found" });
+    }
+
+    let totalAmount = 0;
+    cartItems.forEach((item:cartItem) => {
+      const menuItem = restaurant.menuItems.find(
+        (menuItem) => menuItem._id.toString() === item.menuItemId
+      );
+      if (menuItem) {
+        totalAmount += menuItem.price * parseInt(item.quantity);
+      }
+    });
+
+    totalAmount += restaurant.deliveryPrice;
+
+    const newGroupOrder = new GroupOrder({
+      restaurant: restaurant._id,
+      initiator: req.userId,
+      status: "created",
+      deliveryDetails: deliveryDetails,
+      cartItems: cartItems,
+      totalParticipants: 4,
+      paidParticipants: [],
+      totalAmount: totalAmount, // this will be updated as participants pay
+      amountPerPerson: (totalAmount/4).toFixed(2),
+      createdAt: new Date(),
+
+    });
+
+    await newGroupOrder.save();
+
+    // Create a shareable link using the group order ID
+    const shareableLink = `${FRONTEND_URL}/join-group/${newGroupOrder._id}`;
+
+    // Return both the group order data and the shareable link
+    res.status(201).json({
+      groupOrder: newGroupOrder,
+      shareableLink: shareableLink,
+      id: newGroupOrder._id,
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Something went wrong" });
+  }
+};
+
+const getGroupOrder = async (req: Request, res: Response) => {
+  try {
+    const groupOrder = await GroupOrder.find({'paidParticipants.user': req.userId})
+      .populate("restaurant")
+      .populate("paidParticipants.user");
+
+    if (!groupOrder) {
+      return res.status(404).json({ message: "Group order not found" });
+    }
+
+    res.json(groupOrder);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Something went wrong" });
+  }
+};
+
+const joinGroupOrder = async (req: Request, res: Response) => {
+  try {
+    const { groupOrderId } = req.params;
+    const {deliveryDetails, userId } = req.body;
+
+    const groupOrder = await GroupOrder.findById(groupOrderId);
+
+    if (!groupOrder) {
+      return res.status(404).json({ message: "Group order not found" });
+    }
+
+    if (
+      groupOrder.paidParticipants.some((p) => p.email === deliveryDetails.email)
+    ) {
+      return res
+        .status(400)
+        .json({ message: "You have already joined and paid" });
+    }
+
+    const session = await createSession(
+      [
+        {
+          price_data: {
+            currency: "usd",
+            unit_amount: groupOrder.amountPerPerson,
+            product_data: {
+              name: "Your share of the group order",
+            },
+          },
+          quantity: 1,
+        },
+      ],
+      groupOrder._id.toString(),
+      0, // No delivery fee for group participants
+      groupOrder.restaurant.toString(),
+      userId,
+      true, // isGroupOrder
+      groupOrderId
+    );
+
+    if (!session.url) {
+      return res.status(500).json({ message: "Error creating Stripe session" });
+    }
+
+    res.json({ url: session.url });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Something went wrong" });
+  }
+};
+
+
 export default {
   getMyOrders,
   createCheckoutSession,
   stripeWebhookHandler,
+  createGroupOrder,
+  getGroupOrder,
+  joinGroupOrder,
 };
