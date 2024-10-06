@@ -42,7 +42,6 @@ type CheckoutSessionRequest = {
 };
 
 const handleIndividualOrderPayment = async (orderId: string, session: any) => {
-  console.log("Hola");
   const order = await Order.findById(orderId);
   if (!order) {
     console.error(`Order not found.`);
@@ -66,8 +65,6 @@ const handleGroupOrderPayment = async (groupOrderId: string, userId: string, nam
     console.error(`User not found: ${userId}`);
     return;
   }
-
-  console.log(name)
 
   if (groupOrder.deliveryDetails) {
     if (groupOrder.deliveryDetails.name != "") {
@@ -459,6 +456,10 @@ const joinGroupOrder = async (req: Request, res: Response) => {
       return res
         .status(400)
         .json({ message: "You have already joined and paid" });
+    } else if (groupOrder.status == "paid") {
+      return res
+        .status(400)
+        .json({ message: "Group Order is full" });
     }
 
     const session = await createSession(
