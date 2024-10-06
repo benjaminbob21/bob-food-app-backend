@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import Restaurant, { MenuItemType } from "../models/restaurant";
 import Order from "../models/order";
 import GroupOrder from "../models/groupOrder";
+import User from "../models/user";
 
 const STRIPE = new Stripe(process.env.STRIPE_API_KEY as string);
 const FRONTEND_URL = process.env.FRONTEND_URL as string;
@@ -60,6 +61,12 @@ const handleGroupOrderPayment = async (groupOrderId: string, userId: string, nam
     return;
   }
 
+  const user = await User.findOne({ auth0Id: userId });
+  if (!user) {
+    console.error(`User not found: ${userId}`);
+    return;
+  }
+
   console.log(name)
 
   if (groupOrder.deliveryDetails) {
@@ -67,13 +74,14 @@ const handleGroupOrderPayment = async (groupOrderId: string, userId: string, nam
       groupOrder.deliveryDetails.name += `, ${name}`;
     } else {
       groupOrder.deliveryDetails.name = name;
+
     }
   }
 
   groupOrder.paidParticipants.push({
     email: session.customer_details.email,
     amount: session.amount_total,
-    user: userId
+    user: user._id
   });
 
   if (groupOrder.paidParticipants.length === groupOrder.totalParticipants) {
