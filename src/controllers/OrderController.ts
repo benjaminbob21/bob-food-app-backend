@@ -41,12 +41,13 @@ type CheckoutSessionRequest = {
 };
 
 const handleIndividualOrderPayment = async (orderId: string, session: any) => {
+  console.log("Hola");
   const order = await Order.findById(orderId);
   if (!order) {
     console.error(`Order not found.`);
     return;
   }
-  console.log("Hola")
+  
   order.totalAmount = session.amount_total;
   order.status = "paid";
   await order.save();
@@ -112,9 +113,10 @@ const stripeWebhookHandler = async (req: Request, res: Response) => {
     const session = event.data.object;
     if (session.metadata) {
       const { groupOrderId, orderId, userId, name } = session.metadata;
-      if (groupOrderId != null) {
+      if (groupOrderId) {
         await handleGroupOrderPayment(groupOrderId, userId, name, session);
       } else if (orderId) {
+        console.log("bueno")
         await handleIndividualOrderPayment(orderId, session);
       }
     }
