@@ -3,7 +3,6 @@ import { Request, Response } from "express";
 import Restaurant, { MenuItemType } from "../models/restaurant";
 import Order from "../models/order";
 import GroupOrder from "../models/groupOrder";
-import User from "../models/user";
 
 const STRIPE = new Stripe(process.env.STRIPE_API_KEY as string);
 const FRONTEND_URL = process.env.FRONTEND_URL as string;
@@ -60,20 +59,11 @@ const handleGroupOrderPayment = async (groupOrderId: string, userId: string, ses
     return;
   }
 
-  const user = await User.findById(userId);
-  console.log("Hey"+user)
-  if (user) {
-    console.log("I exist")
-    if (!groupOrder.deliveryDetails) {
-      groupOrder.deliveryDetails = {
-        name: "",
-      };
-    }
-
-    if (groupOrder.deliveryDetails.name) {
-      groupOrder.deliveryDetails.name += `, ${user.name}`;
+  if (groupOrder.deliveryDetails) {
+    if (groupOrder.deliveryDetails.name != "") {
+      groupOrder.deliveryDetails.name += `, ${session.name}`;
     } else {
-      groupOrder.deliveryDetails.name = user.name;
+      groupOrder.deliveryDetails.name = session.name;
     }
   }
 
@@ -169,14 +159,19 @@ const handleGroupCheckout = async (
     checkoutSessionRequest.groupOrderId
   );
 
-  console.log(checkoutSessionRequest.deliveryDetails)
+  console.log(groupOrder)
   if (!groupOrder) {
     return res.status(404).json({ message: "Group order not found" });
   }
 
   if (!groupOrder.deliveryDetails) {
-    groupOrder.deliveryDetails = checkoutSessionRequest.deliveryDetails
+    groupOrder.deliveryDetails = checkoutSessionRequest.deliveryDetails;
+    groupOrder.deliveryDetails.name = "";
   }
+
+  await groupOrder.save()
+
+   console.log(groupOrder)
 
   if (
     groupOrder.paidParticipants.some(
@@ -205,6 +200,7 @@ const handleGroupCheckout = async (
     0,
     restaurant._id.toString(),
     req.userId,
+    checkoutSessionRequest.deliveryDetails.name,
     true,
     checkoutSessionRequest.groupOrderId
   );
@@ -255,7 +251,8 @@ const handleIndividualCheckout = async (
     newOrder._id.toString(),
     restaurant.deliveryPrice,
     restaurant._id.toString(),
-    req.userId
+    req.userId,
+    checkoutSessionRequest.deliveryDetails.name
   );
 
   if (!session.url) {
@@ -302,6 +299,7 @@ const createSession = async (
   deliveryPrice: number,
   restaurantId: string,
   userId: string,
+  name: string,
   isGroupOrder: boolean = false,
   groupId: string | null = null
 ) => {
@@ -326,6 +324,7 @@ const createSession = async (
       orderId,
       restaurantId,
       userId,
+      name,
       isGroupOrder: isGroupOrder.toString(),
       groupOrderId: groupId
     },
@@ -443,6 +442,7 @@ const joinGroupOrder = async (req: Request, res: Response) => {
       0, // No delivery fee for group participants
       groupOrder.restaurant.toString(),
       userId,
+      deliveryDetails.name,
       true, // isGroupOrder
       groupOrderId
     );
