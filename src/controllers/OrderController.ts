@@ -46,7 +46,7 @@ const handleIndividualOrderPayment = async (orderId: string, session: any) => {
     console.error(`Order not found.`);
     return;
   }
-
+  console.log("Hola")
   order.totalAmount = session.amount_total;
   order.status = "paid";
   await order.save();
