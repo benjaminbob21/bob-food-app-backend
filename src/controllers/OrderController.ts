@@ -112,7 +112,7 @@ const stripeWebhookHandler = async (req: Request, res: Response) => {
     const session = event.data.object;
     if (session.metadata) {
       const { groupOrderId, orderId, userId, name } = session.metadata;
-      if (groupOrderId !== null) {
+      if (groupOrderId != null) {
         await handleGroupOrderPayment(groupOrderId, userId, name, session);
       } else if (orderId) {
         await handleIndividualOrderPayment(orderId, session);
