@@ -59,6 +59,8 @@ const handleGroupOrderPayment = async (groupOrderId: string, userId: string, ses
     return;
   }
 
+  console.log(session.name)
+
   if (groupOrder.deliveryDetails) {
     if (groupOrder.deliveryDetails.name != "") {
       groupOrder.deliveryDetails.name += `, ${session.name}`;
@@ -164,14 +166,13 @@ const handleGroupCheckout = async (
     return res.status(404).json({ message: "Group order not found" });
   }
 
-  if (!groupOrder.deliveryDetails) {
-    groupOrder.deliveryDetails = checkoutSessionRequest.deliveryDetails;
-    groupOrder.deliveryDetails.name = "";
-  }
+  groupOrder.deliveryDetails = checkoutSessionRequest.deliveryDetails;
+  groupOrder.deliveryDetails.name = "";
+
 
   await groupOrder.save()
 
-   console.log(groupOrder)
+  console.log(groupOrder)
 
   if (
     groupOrder.paidParticipants.some(
