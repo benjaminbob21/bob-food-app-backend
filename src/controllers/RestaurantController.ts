@@ -20,7 +20,6 @@ const getRestaurant = async (req: Request, res: Response) => {
 const searchRestaurant = async (req: Request, res: Response) => {
   try {
     const city = req.params.city;
-
     const searchQuery = (req.query.searchQuery as string) || "";
     const selectedCuisines = (req.query.selectedCuisines as string) || "";
     const sortOption = (req.query.sortOption as string) || "lastUpdated";
@@ -28,10 +27,13 @@ const searchRestaurant = async (req: Request, res: Response) => {
 
     let query: any = {};
 
+    // First check if city exists
     query["city"] = new RegExp(city, "i");
     const cityCheck = await Restaurant.countDocuments(query);
     if (cityCheck === 0) {
       return res.status(404).json({
+        success: false,
+        message: "No restaurants found in this city",
         data: [],
         pagination: {
           total: 0,
@@ -41,11 +43,11 @@ const searchRestaurant = async (req: Request, res: Response) => {
       });
     }
 
+    // Build the full query
     if (selectedCuisines) {
       const cuisinesArray = selectedCuisines
         .split(",")
         .map((cuisine) => new RegExp(cuisine, "i"));
-
       query["cuisines"] = { $all: cuisinesArray };
     }
 
@@ -60,17 +62,30 @@ const searchRestaurant = async (req: Request, res: Response) => {
     const pageSize = 10;
     const skip = (page - 1) * pageSize;
 
-    const sortOrder = sortOption === "averageRating" ? -1 : 1;
+    // Check if any results exist for the full query
+    const total = await Restaurant.countDocuments(query);
+    if (total === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No restaurants found matching your criteria",
+        data: [],
+        pagination: {
+          total: 0,
+          page: 1,
+          pages: 1,
+        },
+      });
+    }
 
+    const sortOrder = sortOption === "averageRating" ? -1 : 1;
     const restaurants = await Restaurant.find(query)
       .sort({ [sortOption]: sortOrder })
       .skip(skip)
       .limit(pageSize)
       .lean();
 
-    const total = await Restaurant.countDocuments(query);
-
     const response = {
+      success: true,
       data: restaurants,
       pagination: {
         total,
@@ -82,7 +97,16 @@ const searchRestaurant = async (req: Request, res: Response) => {
     res.json(response);
   } catch (error) {
     console.log(error);
-    res.status(500).json({ message: "Something went wrong" });
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+      data: [],
+      pagination: {
+        total: 0,
+        page: 1,
+        pages: 1,
+      },
+    });
   }
 };
 
