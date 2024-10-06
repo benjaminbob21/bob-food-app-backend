@@ -52,20 +52,20 @@ const handleIndividualOrderPayment = async (orderId: string, session: any) => {
   await order.save();
 };
 
-const handleGroupOrderPayment = async (groupOrderId: string, userId: string, session: any) => {
+const handleGroupOrderPayment = async (groupOrderId: string, userId: string, name: string, session: any) => {
   const groupOrder = await GroupOrder.findById(groupOrderId);
   if (!groupOrder) {
     console.error(`Group order not found: ${groupOrderId}`);
     return;
   }
 
-  console.log(session.name)
+  console.log(name)
 
   if (groupOrder.deliveryDetails) {
     if (groupOrder.deliveryDetails.name != "") {
-      groupOrder.deliveryDetails.name += `, ${session.name}`;
+      groupOrder.deliveryDetails.name += `, ${name}`;
     } else {
-      groupOrder.deliveryDetails.name = session.name;
+      groupOrder.deliveryDetails.name = name;
     }
   }
 
@@ -111,9 +111,9 @@ const stripeWebhookHandler = async (req: Request, res: Response) => {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     if (session.metadata) {
-      const { groupOrderId, orderId, userId } = session.metadata;
+      const { groupOrderId, orderId, userId, name } = session.metadata;
       if (groupOrderId !== null) {
-        await handleGroupOrderPayment(groupOrderId, userId, session);
+        await handleGroupOrderPayment(groupOrderId, userId, name, session);
       } else if (orderId) {
         await handleIndividualOrderPayment(orderId, session);
       }
