@@ -61,7 +61,9 @@ const handleGroupOrderPayment = async (groupOrderId: string, userId: string, ses
   }
 
   const user = await User.findById(userId);
+  console.log("Hey"+user)
   if (user) {
+    console.log("I exist")
     if (!groupOrder.deliveryDetails) {
       groupOrder.deliveryDetails = {
         name: "",
@@ -166,6 +168,8 @@ const handleGroupCheckout = async (
   const groupOrder = await GroupOrder.findById(
     checkoutSessionRequest.groupOrderId
   );
+
+  console.log(checkoutSessionRequest.deliveryDetails)
   if (!groupOrder) {
     return res.status(404).json({ message: "Group order not found" });
   }
@@ -334,7 +338,7 @@ const createSession = async (
 
 const createGroupOrder = async (req: Request, res: Response) => {
   try {
-    const { cartItems, deliveryDetails, restaurantId } =
+    const { cartItems, restaurantId } =
       req.body;
 
     const restaurant = await Restaurant.findById(restaurantId);
@@ -359,7 +363,7 @@ const createGroupOrder = async (req: Request, res: Response) => {
       restaurant: restaurant._id,
       initiator: req.userId,
       status: "created",
-      deliveryDetails: deliveryDetails,
+      // deliveryDetails: deliveryDetails,
       cartItems: cartItems,
       totalParticipants: 4,
       paidParticipants: [],
