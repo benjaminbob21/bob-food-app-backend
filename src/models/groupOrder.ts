@@ -6,11 +6,13 @@ const groupOrderSchema = new mongoose.Schema({
     ref: "Restaurant",
     required: true,
   },
+  restaurantName: {type: String},
   initiator: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
     required: true,
   },
+  initiatorName: { type: String },
   paidParticipants: [
     {
       user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
@@ -22,9 +24,9 @@ const groupOrderSchema = new mongoose.Schema({
   totalParticipants: { type: Number, required: true },
   deliveryDetails: {
     email: { type: String },
-    name: { type: String},
-    addressLine1: { type: String},
-    city: { type: String},
+    name: { type: String },
+    addressLine1: { type: String },
+    city: { type: String },
   },
   cartItems: [
     {
@@ -40,7 +42,7 @@ const groupOrderSchema = new mongoose.Schema({
     enum: ["created", "inProgress", "paid", "placed", "cancelled"],
     default: "created",
   },
-  expiresAt: { type: Date},
+  expiresAt: { type: Date },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
