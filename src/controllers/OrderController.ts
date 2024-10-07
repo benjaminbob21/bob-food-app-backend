@@ -60,7 +60,7 @@ const handleGroupOrderPayment = async (groupOrderId: string, userId: string, nam
     return;
   }
 
-  const user = await User.findOne({ auth0Id: userId });
+  const user = await User.findById(userId);
   if (!user) {
     console.error(`User not found: ${userId}`);
     return;
