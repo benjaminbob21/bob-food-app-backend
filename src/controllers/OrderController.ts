@@ -442,7 +442,7 @@ const getLinkAndOrder = async (req: Request, res: Response) => {
 
 const joinGroupOrder = async (req: Request, res: Response) => {
   try {
-    const { deliveryDetails, userId, groupOrderId } = req.body;
+    const { deliveryDetails, groupOrderId } = req.body;
 
     const groupOrder = await GroupOrder.findById(groupOrderId);
 
@@ -478,7 +478,7 @@ const joinGroupOrder = async (req: Request, res: Response) => {
       groupOrder._id.toString(),
       0, // No delivery fee for group participants
       groupOrder.restaurant.toString(),
-      userId,
+      req.userId,
       deliveryDetails.name,
       true, // isGroupOrder
       groupOrderId
