@@ -337,7 +337,7 @@ const createSession = async (
       isGroupOrder: isGroupOrder.toString(),
       groupOrderId: groupId
     },
-    success_url: `${FRONTEND_URL}/order-status?success=true`,
+    success_url: isGroupOrder ? `${FRONTEND_URL}/group-order-status?success=true`: `${FRONTEND_URL}/order-status?success=true`,
     cancel_url: `${FRONTEND_URL}/detail/${restaurantId}?cancelled=true`,
   });
 
