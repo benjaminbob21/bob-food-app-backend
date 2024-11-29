@@ -467,7 +467,7 @@ const joinGroupOrder = async (req: Request, res: Response) => {
         {
           price_data: {
             currency: "usd",
-            unit_amount: groupOrder.amountPerPerson,
+            unit_amount: Math.round(groupOrder.amountPerPerson),
             product_data: {
               name: "Your share of the group order",
             },
