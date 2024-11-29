@@ -40,6 +40,23 @@ type CheckoutSessionRequest = {
   restaurantId: string;
   groupOrderId?: string;
 };
+// type CheckoutSessionRequest = {
+//   cartItems: {
+//     menuItemId: string;
+//     name: string;
+//     quantity: string;
+//   }[];
+//   deliveryDetails: {
+//     email: string;
+//     name: string;
+//     addressLine1: string;
+//     city: string;
+//   };
+//   restaurantId: string;
+//   groupOrderId?: string;
+//   amountPerPerson?: number;
+// };
+
 
 const handleIndividualOrderPayment = async (orderId: string, session: any) => {
   const order = await Order.findById(orderId);
@@ -180,8 +197,6 @@ const handleGroupCheckout = async (
 
   await groupOrder.save()
 
-  console.log(groupOrder)
-
   if (
     groupOrder.paidParticipants.some(
       (p) => p.email === checkoutSessionRequest.deliveryDetails.email
@@ -192,12 +207,14 @@ const handleGroupCheckout = async (
       .json({ message: "You have already paid your share" });
   }
 
+  console.log(groupOrder.amountPerPerson);
+
   const session = await createSession(
     [
       {
         price_data: {
           currency: "usd",
-          unit_amount: groupOrder.amountPerPerson, // Now properly converted to cents
+          unit_amount: Math.round(groupOrder.amountPerPerson), // Now properly converted to cents
           product_data: {
             name: "Your share of the group order",
           },
