@@ -197,7 +197,7 @@ const handleGroupCheckout = async (
       {
         price_data: {
           currency: "usd",
-          unit_amount: groupOrder.amountPerPerson, // Now properly converted to cents
+          unit_amount: Math.round(groupOrder.amountPerPerson), // Now properly converted to cents
           product_data: {
             name: "Your share of the group order",
           },
@@ -467,7 +467,7 @@ const joinGroupOrder = async (req: Request, res: Response) => {
         {
           price_data: {
             currency: "usd",
-            unit_amount: groupOrder.amountPerPerson,
+            unit_amount: Math.round(groupOrder.amountPerPerson),
             product_data: {
               name: "Your share of the group order",
             },
