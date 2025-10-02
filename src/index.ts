@@ -37,6 +37,7 @@ app.use("/api/restaurant", restaurantRoute);
 app.use("/api/order", orderRoute);
 app.use("/api/reviews", reviewRoutes);
 
-app.listen(7000, () => {
-  console.log("server started on localhost:7000");
+const port = process.env.PORT || 3001;
+app.listen(port, () => {
+  console.log(`server started on localhost:${port}`);
 });
